@@ -19,7 +19,8 @@ param(
     [string]$Mood = "happy",
     [int]$X = -1,
     [int]$Y = -1,
-    [int]$ParentPid = 0
+    [int]$ParentPid = 0,
+    [double]$AutoExitAfter = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -125,6 +126,12 @@ $script:bubbleUntil = 0.0
 $script:feedLine = ""
 $script:dragOn = $false
 $script:moved = $false
+$script:exiting = $false
+$script:exitEndL = 0.0
+$script:exitStartL = 0.0
+$script:exitStartT = 0.0
+$script:exitT0ms = 0
+$script:exitLastLogMs = 0
 
 # ---- 任务完成提醒(监听 Harness events.host 事件流) ----
 $script:taskWatchAlive = $false
@@ -189,7 +196,9 @@ $script:LINES = @{
         "宿主你好，我是爱弥斯～请多指教！"
     )
     bye = @(
-        "拜拜～我会在后台等你的！",
+        "拜拜～我要跑到屏幕外面充电啦！",
+        "溜了溜了～下次见！",
+        "退场！赛博幽灵开溜——",
         "要记得常来看看我哦～"
     )
     taskdone = @(
@@ -677,7 +686,7 @@ function Start-Loop {
             Set-State "idle"
         }
         if ($script:state -eq "eat" -and $script:orbT -ge 0) {
-            $p = [math]::Min(1, ($t - $script:orbT) / 1.5)
+            $p = [math]::Min(1.0, ($t - $script:orbT) / 1.5)
             $e = 1 - [math]::Pow(1 - $p, 3)
             $ox = 236 + (140 - 236) * $e
             $oy = 168 + (196 - 168) * $e
@@ -695,7 +704,7 @@ function Start-Loop {
 
         # ---- 爱心动画 ----
         if ($script:heartT -ge 0) {
-            $hp = 1 - [math]::Min(1, ($script:heartT - $t) / 1.2)
+            $hp = 1 - [math]::Min(1.0, ($script:heartT - $t) / 1.2)
             if ($hp -le 1) {
                 for ($i = 0; $i -lt $script:hearts.Count; $i++) {
                     $h = $script:hearts[$i][0]; $st = $script:hearts[$i][1]
@@ -704,7 +713,7 @@ function Start-Loop {
                     [System.Windows.Controls.Canvas]::SetTop($h, 104 - $hp * 26 - $i * 6)
                     $s = 0.3 + $hp * 1.1
                     $st.ScaleX = $s; $st.ScaleY = $s
-                    $h.Opacity = [math]::Max(0, 1 - $hp * 1.2)
+                    $h.Opacity = [math]::Max(0.0, 1 - $hp * 1.2)
                 }
             }
             if ($t -ge $script:heartT) {
@@ -727,7 +736,7 @@ function Start-Loop {
         }
 
         # ---- 随机闲聊 ----
-        if ($script:state -eq "idle") {
+        if ($script:state -eq "idle" -and -not $script:exiting) {
             $script:idleChatIn -= 0.033
             if ($script:idleChatIn -le 0) {
                 $script:idleChatIn = (Get-Random -Minimum 35 -Maximum 75)
@@ -743,6 +752,7 @@ function Start-Loop {
 function Wire-Events {
     $script:canvas.Add_MouseLeftButtonDown({
         param($s, $e)
+        if ($script:exiting) { return }
         $p = $e.GetPosition($script:win)
         $script:dragOn = $true
         $script:moved = $false
@@ -752,6 +762,7 @@ function Wire-Events {
     })
     $script:canvas.Add_MouseMove({
         param($s, $e)
+        if ($script:exiting) { return }
         if ($script:dragOn) {
             $p = $e.GetPosition($script:win)
             $dx = $p.X - $script:dragStart.X
@@ -768,6 +779,7 @@ function Wire-Events {
     })
     $script:canvas.Add_MouseLeftButtonUp({
         param($s, $e)
+        if ($script:exiting) { return }
         if ($script:dragOn) {
             $script:dragOn = $false
             if (-not $script:moved) {
@@ -1011,9 +1023,8 @@ function Setup-Tray {
     $script:tray = $tray
 }
 
-function Exit-App {
-    $script:taskWatchAlive = $false
-    try { if ($script:taskWatchCts) { $script:taskWatchCts.Cancel() } } catch { }
+# 立即退出(清理资源后关闭进程)
+function Do-Exit {
     try { $script:tray.Visible = $false; $script:tray.Dispose() } catch { }
     try { $script:petMutex.ReleaseMutex() } catch { }
     try { $script:win.Close() } catch { }
@@ -1021,6 +1032,69 @@ function Exit-App {
         if ([System.Windows.Application]::Current) { [System.Windows.Application]::Current.Shutdown() }
         else { [Environment]::Exit(0) }
     } catch { [Environment]::Exit(0) }
+}
+
+# 退出入口: 先跑到屏幕边缘退场动画, 再清理退出
+function Exit-App {
+    if ($script:exiting) { return }
+    $script:exiting = $true
+    # 停掉后台监听与看门狗
+    $script:taskWatchAlive = $false
+    try { if ($script:taskWatchCts) { $script:taskWatchCts.Cancel() } } catch { }
+    try { $watchdog.Stop() } catch { }
+    try { $script:tray.Visible = $false } catch { }
+    if ($script:win -and $script:win.IsVisible) {
+        try {
+            Set-Bubble (Get-Line "bye") 1.6
+            Start-ExitAnimation
+            return
+        } catch { }
+    }
+    Do-Exit
+}
+
+# 跑到最近的屏幕边缘后退场: 加速冲刺 + 上下蹦跳, 完全出屏后退出
+function Start-ExitAnimation {
+    $wa = $null
+    try {
+        $scr = [System.Windows.Forms.Screen]::FromPoint((New-Object System.Drawing.Point([int]($script:win.Left + 140), [int]($script:win.Top + 180))))
+        if ($scr) { $wa = $scr.WorkingArea }
+    } catch { }
+    if (-not $wa) { $wa = [System.Windows.SystemParameters]::WorkArea }
+    $cx = $script:win.Left + 140
+    $distL = $cx - $wa.Left
+    $distR = ($wa.Left + $wa.Width) - $cx
+    if ($distL -le $distR) {
+        $script:exitEndL = $wa.Left - $script:win.Width - 60
+        $dir = "左"
+    } else {
+        $script:exitEndL = $wa.Left + $wa.Width + 60
+        $dir = "右"
+    }
+    $script:exitStartL = $script:win.Left
+    $script:exitStartT = $script:win.Top
+    $script:exitT0ms = [Environment]::TickCount
+    $script:exitLastLog = 0.0
+    Log-PetEvent ("开始退场动画: 向{0}冲刺, 目标X={1}, 起点L={2}" -f $dir, [int]$script:exitEndL, [int]$script:exitStartL)
+    $anim = New-Object System.Windows.Threading.DispatcherTimer
+    $anim.Interval = [TimeSpan]::FromMilliseconds(33)
+    $anim.Add_Tick({
+        # 独立单调时钟: 与主循环解耦, 退出期间也能平滑推进
+        $p = [Math]::Min(1.0, ([Environment]::TickCount - $script:exitT0ms) / 1350.0)
+        $ease = $p * $p
+        $script:win.Left = $script:exitStartL + ($script:exitEndL - $script:exitStartL) * $ease
+        $script:win.Top = $script:exitStartT + [Math]::Sin($p * [Math]::PI * 5) * 4
+        if (([Environment]::TickCount - $script:exitLastLogMs) -ge 100) {
+            $script:exitLastLogMs = [Environment]::TickCount
+            Log-PetEvent ("退场中: L={0} T={1} p={2:N2}" -f [int]$script:win.Left, [int]$script:win.Top, $p)
+        }
+        if ($p -ge 1) {
+            try { $anim.Stop() } catch { }
+            Log-PetEvent "退场动画完成, 退出"
+            Do-Exit
+        }
+    })
+    $anim.Start()
 }
 
 # ============================== 主流程 =====================================
@@ -1088,6 +1162,18 @@ if ($ParentPid -gt 0) {
     })
     $watchdog.Start()
     Log-PetEvent "宿主看门狗已启动(PID=$ParentPid)"
+}
+
+# ---- 自动退场测试钩子: N 秒后触发退出(可观察跑到屏幕边缘的退场动画) ----
+if ($AutoExitAfter -gt 0) {
+    $autoExit = New-Object System.Windows.Threading.DispatcherTimer
+    $autoExit.Interval = [TimeSpan]::FromSeconds($AutoExitAfter)
+    $autoExit.Add_Tick({
+        try { $autoExit.Stop() } catch { }
+        Exit-App
+    })
+    $autoExit.Start()
+    Log-PetEvent "自动退场计时启动: $AutoExitAfter 秒后触发"
 }
 
 $script:win.Add_Closed({ Exit-App })
