@@ -2,7 +2,8 @@
 #  DeepSeek Harness 桌面版 启动器
 #  1. 检测 127.0.0.1:3080 的 Harness 服务, 未启动则自动拉起 `dsh web`
 #  2. 用 Edge 无边框 app 模式打开 Harness 桌面窗口(专用独立配置目录)
-#  3. 挂载爱弥斯桌宠(独立隐藏进程, 关闭本窗口不影响桌宠)
+#  3. 挂载爱弥斯桌宠(独立隐藏进程)
+#  4. 挂载会话管家: 叉掉 Harness 窗口 → 自动关停 dsh web → 桌宠随之退场
 # ============================================================================
 param(
     [string]$HarnessUrl = "http://127.0.0.1:3080",
@@ -12,6 +13,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
+$script:DshPid = 0
 
 function Test-Harness([string]$url) {
     try {
@@ -22,27 +24,44 @@ function Test-Harness([string]$url) {
     }
 }
 
+function Find-HarnessPid([string]$url) {
+    try {
+        $u = New-Object System.Uri($url)
+        $port = $u.Port
+        $line = netstat -ano | Select-String (":$port\s+.*LISTENING") | Select-Object -First 1
+        if ($line) {
+            $pidStr = ($line.ToString() -split '\s+')[-1]
+            $pidNum = 0
+            if ([int]::TryParse($pidStr, [ref]$pidNum)) { return $pidNum }
+        }
+    } catch { }
+    return 0
+}
+
 function Ensure-Harness {
     if (Test-Harness $HarnessUrl) {
-        Write-Host "DeepSeek Harness 服务已在运行: $HarnessUrl"
+        $script:DshPid = Find-HarnessPid $HarnessUrl
+        Write-Host "DeepSeek Harness 服务已在运行: $HarnessUrl (PID=$script:DshPid)"
         return
     }
     Write-Host "未检测到 Harness 服务, 正在启动 dsh web ..."
     $logDir = Join-Path $root "logs"
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     $log = Join-Path $logDir "dsh-web.log"
+    $proc = $null
     try {
-        Start-Process cmd -ArgumentList @("/c", "dsh web >> `"$log`" 2>&1") -WindowStyle Hidden | Out-Null
+        $proc = Start-Process cmd -ArgumentList @("/c", "dsh web >> `"$log`" 2>&1") -WindowStyle Hidden -PassThru
     } catch {
-        Start-Process -FilePath "dsh" -ArgumentList @("web") -WindowStyle Hidden | Out-Null
+        $proc = Start-Process -FilePath "dsh" -ArgumentList @("web") -WindowStyle Hidden -PassThru
     }
+    $script:DshPid = $proc.Id
     $ok = $false
     for ($i = 0; $i -lt 40; $i++) {
         Start-Sleep -Milliseconds 1000
         if (Test-Harness $HarnessUrl) { $ok = $true; break }
     }
     if ($ok) {
-        Write-Host "Harness 服务已就绪: $HarnessUrl"
+        Write-Host "Harness 服务已就绪: $HarnessUrl (PID=$script:DshPid)"
     } else {
         Write-Host "警告: 40 秒内未检测到 Harness 服务, 请查看日志: $log"
         Write-Host "可手动在终端执行: dsh web"
@@ -89,8 +108,31 @@ function Start-Pet {
         "-File", "`"$petScript`"",
         "-HarnessUrl", "`"$HarnessUrl`""
     )
+    # 宿主看门狗: dsh 服务退出后桌宠自动退场
+    if ($script:DshPid -gt 0) {
+        $args += @("-ParentPid", "$script:DshPid")
+    }
     Start-Process -FilePath $ps -ArgumentList $args -WindowStyle Hidden | Out-Null
     Write-Host "爱弥斯桌宠已挂载 (常驻托盘, 右键桌宠可打开菜单)"
+}
+
+function Start-SessionWatcher {
+    # 会话管家: 叉掉 Harness GUI 窗口 → 关停 dsh web 服务树 → 桌宠看门狗退场
+    if ($script:DshPid -le 0) { return }
+    if ($SkipEdge) { return }
+    $watcher = Join-Path $PSScriptRoot "watch-session.ps1"
+    if (-not (Test-Path $watcher)) { return }
+    $ps = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    $args = @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-WindowStyle", "Hidden",
+        "-File", "`"$watcher`"",
+        "-DshPid", "$script:DshPid",
+        "-HarnessUrl", "`"$HarnessUrl`""
+    )
+    Start-Process -FilePath $ps -ArgumentList $args -WindowStyle Hidden | Out-Null
+    Write-Host "会话管家已挂载 (叉掉 Harness 窗口将自动关停服务与桌宠)"
 }
 
 function Ensure-Shortcut {
@@ -117,5 +159,6 @@ function Ensure-Shortcut {
 Ensure-Harness
 Open-EdgeWindow
 Start-Pet
+Start-SessionWatcher
 Ensure-Shortcut
-Write-Host "启动完成!"
+Write-Host "启动完成! (叉掉 Harness 窗口即可全家下班: 服务/窗口/桌宠一起关闭)"
