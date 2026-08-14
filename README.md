@@ -91,6 +91,7 @@
 - **端口自适应**：插件从 `webServer` 服务读取实际端口并传给桌宠，改端口启动（如 `dsh web --port 8080`）桌宠会自动跟随
 - **配置**（可选，加在补丁条目下）：`config: { enabled: false }` 禁用；`noTaskWatch: true` 关闭任务提醒；`petScript: "..."` 指定外部桌宠脚本
 - **卸载**：删除 `cordis.patch.yml` 里的 `desktop-pet` 插入条目并重启即可
+- **开关**：双击 `切换桌宠插件.bat` 一键启用/禁用（本质是在注册条目下加/删 `disabled: true`，重启 `dsh web` 生效）；也可手动编辑 `$DSH_HOME\profiles\web\cordis.patch.yml`
 - **其他机器安装**：把 `dsh-desktop-pet\` 目录放到任意位置，在 `$DSH_HOME\profiles\node_modules\` 下建同名目录链接，再按 `dsh-desktop-pet\profile-patch.yml` 的模板补丁注册
 
 > 注意：插件内置的是桌宠脚本的副本；改动 `pet\爱弥斯桌宠.ps1`（独立版）不会影响插件版，需要同步复制到 `dsh-desktop-pet\pet\`。
