@@ -1,0 +1,10 @@
+# Edge 专用配置目录(浏览器用户数据, 体积大且含隐私)
+.edge-profile/
+
+# 运行日志
+logs/
+
+# 系统临时文件
+Thumbs.db
+Desktop.ini
+*.tmp
