@@ -58,6 +58,8 @@ function apply(ctx, config) {
     url,
   ];
   if (config.noTaskWatch) argv.push("-NoTaskWatch");
+  // 宿主看门狗: 桌宠检测到本进程退出后自动退场(即使 Harness 被强杀也能兜住)
+  argv.push("-ParentPid", String(process.pid));
   const handle = ctx.subprocess.spawn({
     argv,
     cwd: process.cwd(),

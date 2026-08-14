@@ -18,7 +18,8 @@ param(
     [string]$Snapshot = "",
     [string]$Mood = "happy",
     [int]$X = -1,
-    [int]$Y = -1
+    [int]$Y = -1,
+    [int]$ParentPid = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -1070,6 +1071,24 @@ Setup-Tray
 Set-State "idle"
 $null = Start-Loop
 if (-not $NoTaskWatch) { Start-TaskWatcher }
+
+# ---- 宿主进程看门狗: 插件模式(ParentPid>0)下, 宿主(Harness)进程退出则桌宠自动退场 ----
+if ($ParentPid -gt 0) {
+    $watchdog = New-Object System.Windows.Threading.DispatcherTimer
+    $watchdog.Interval = [TimeSpan]::FromSeconds(4)
+    $watchdog.Add_Tick({
+        try {
+            $parent = Get-Process -Id $ParentPid -ErrorAction Stop
+            if ($parent.HasExited) { throw "host exited" }
+        } catch {
+            Log-PetEvent "宿主进程(Harness)已退出, 桌宠自动退场"
+            try { $watchdog.Stop() } catch { }
+            Exit-App
+        }
+    })
+    $watchdog.Start()
+    Log-PetEvent "宿主看门狗已启动(PID=$ParentPid)"
+}
 
 $script:win.Add_Closed({ Exit-App })
 
