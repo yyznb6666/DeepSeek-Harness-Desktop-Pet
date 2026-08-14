@@ -1,0 +1,13 @@
+{
+  "name": "dsh-desktop-pet",
+  "version": "1.0.0",
+  "description": "爱弥斯桌宠: DeepSeek Harness 桌面桌宠插件(鸣潮·爱弥斯 Q 版赛博幽灵形象, 含任务完成提醒)",
+  "type": "module",
+  "main": "lib/index.js",
+  "license": "MIT",
+  "keywords": ["dsh", "deepseek-harness", "desktop-pet", "cordis"],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/schemastery": "^3.18.1"
+  }
+}

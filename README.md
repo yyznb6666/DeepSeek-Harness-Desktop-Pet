@@ -13,6 +13,7 @@
 |---|---|
 | 🖥️ Harness 桌面窗口 | Edge `--app` 无边框模式打开本地 Harness（专用独立配置，不污染日常浏览器） |
 | ⚙️ 服务自启 | 若 `dsh web` 未运行，启动器自动拉起并等待就绪 |
+| 🧩 DSH 插件 | `dsh-desktop-pet` Cordis 插件：**Harness 启动时自动挂载桌宠、关闭时自动回收**（已注册到 web profile，重启 `dsh web` 生效） |
 | 👧 爱弥斯桌宠 | WPF 全透明置顶窗口，默认显示**官方 Q 版立绘**（`pet\portrait.png`，已自动去白底+裁边） |
 | 🔔 任务完成提醒 | 常驻监听 Harness 事件流（WebSocket），**主会话任务完成时自动提醒**：气泡台词 + 爱心特效 + 托盘弹窗 + 提示音 + 自动唤起隐藏窗口 |
 | 🎬 动态 | 呼吸浮动、立绘下方光影 + 全息环旋转 + 星光闪烁（立绘模式）；删除立绘后回退到自绘矢量 Q 版（眨眼/幽灵尾等全套动画） |
@@ -77,6 +78,23 @@
 
 ---
 
+## 🧩 作为 DSH 插件使用
+
+桌宠已封装为 **`dsh-desktop-pet`** Cordis 插件（零依赖），并已安装到本机 Harness：
+
+- **插件包**：`dsh-desktop-pet\`（`lib\index.js` 入口 + 内置桌宠脚本与立绘素材）
+- **已注册**：`$DSH_HOME\profiles\web\cordis.patch.yml` 已插入 `desktop-pet` 条目，并创建了 `profiles\node_modules\dsh-desktop-pet` 链接
+- **生效方式**：重启 Harness（结束当前 `dsh web` 进程后重新运行 `启动桌面版.bat` 或 `dsh web`）。之后桌宠随 Harness **启动自动出现、关闭自动消失**
+- **端口自适应**：插件从 `webServer` 服务读取实际端口并传给桌宠，改端口启动（如 `dsh web --port 8080`）桌宠会自动跟随
+- **配置**（可选，加在补丁条目下）：`config: { enabled: false }` 禁用；`noTaskWatch: true` 关闭任务提醒；`petScript: "..."` 指定外部桌宠脚本
+- **卸载**：删除 `cordis.patch.yml` 里的 `desktop-pet` 插入条目并重启即可
+- **其他机器安装**：把 `dsh-desktop-pet\` 目录放到任意位置，在 `$DSH_HOME\profiles\node_modules\` 下建同名目录链接，再按 `dsh-desktop-pet\profile-patch.yml` 的模板补丁注册
+
+> 注意：插件内置的是桌宠脚本的副本；改动 `pet\爱弥斯桌宠.ps1`（独立版）不会影响插件版，需要同步复制到 `dsh-desktop-pet\pet\`。
+> 桌宠有互斥锁保护：插件版与独立启动版同时存在时只会出现一个，不会重复。
+
+---
+
 ## 📂 文件结构
 
 ```
@@ -84,12 +102,18 @@ deekseep桌面版/
 ├── 启动桌面版.bat          # 一键启动（推荐）
 ├── 桌宠单独启动.bat
 ├── 打开Harness窗口.bat
+├── 推送GitHub.bat          # 一键推送仓库到 GitHub
 ├── pet/
 │   ├── 爱弥斯桌宠.ps1      # 桌宠主程序（形象/动画/交互/台词都在这里，可自行改）
 │   ├── 启动器.ps1          # 服务自启 + Edge 窗口 + 桌宠挂载
 │   ├── run.ps1             # ASCII 转发器（bat → 启动器，避免 cmd 编码问题）
 │   ├── run-pet.ps1         # ASCII 转发器（bat → 桌宠）
 │   └── portrait.png        # 官方 Q 版立绘（默认形象；删除即回退自绘矢量版）
+├── dsh-desktop-pet/        # DSH Cordis 插件包（随 Harness 启停桌宠）
+│   ├── lib/index.js        # 插件入口（ctx.subprocess 托管桌宠进程）
+│   ├── pet/                # 插件内置的桌宠脚本与立绘副本
+│   ├── assets/爱弥斯.ico
+│   └── profile-patch.yml   # 注册模板（cordis.patch.yml 的插入条目）
 ├── assets/
 │   ├── 爱弥斯.ico          # 桌宠/快捷方式图标
 │   └── 爱弥斯.png

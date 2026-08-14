@@ -1,0 +1,5 @@
+# 你的补丁层: 应用于所有 bundle 层之后
+# 桌宠插件: 主机启动时自动挂载爱弥斯桌宠(随 Harness 启停, 任务完成提醒)
+- insert:
+    - id: desktop-pet
+      name: dsh-desktop-pet
