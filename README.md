@@ -85,6 +85,7 @@
 - **插件包**：`dsh-desktop-pet\`（`lib\index.js` 入口 + 内置桌宠脚本与立绘素材）
 - **已注册**：`$DSH_HOME\profiles\web\cordis.patch.yml` 已插入 `desktop-pet` 条目，并创建了 `profiles\node_modules\dsh-desktop-pet` 链接
 - **生效方式**：重启 Harness（结束当前 `dsh web` 进程后重新运行 `启动桌面版.bat` 或 `dsh web`）。之后桌宠随 Harness **启动自动出现、关闭自动消失**
+- **退出保障**：插件把宿主 PID 传给桌宠，桌宠内置**宿主看门狗**（每 4 秒检查一次）——无论 Harness 正常退出、关窗口还是被强杀/崩溃，桌宠都会在数秒内自动退场，不留孤儿进程
 - **端口自适应**：插件从 `webServer` 服务读取实际端口并传给桌宠，改端口启动（如 `dsh web --port 8080`）桌宠会自动跟随
 - **配置**（可选，加在补丁条目下）：`config: { enabled: false }` 禁用；`noTaskWatch: true` 关闭任务提醒；`petScript: "..."` 指定外部桌宠脚本
 - **卸载**：删除 `cordis.patch.yml` 里的 `desktop-pet` 插入条目并重启即可
